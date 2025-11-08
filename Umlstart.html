@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>객체지향 클래스 구조 시각화 도구</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f7fafc; }
+        .uml-card {
+            min-width: 250px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+            transition: transform 0.2s;
+        }
+        .uml-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+        }
+        .uml-card-name {
+            font-weight: 700;
+            padding: 8px 12px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .uml-card-section {
+            padding: 4px 12px;
+            font-size: 0.85rem;
+            border-bottom: 1px solid #edf2f7;
+        }
+        .uml-card-section:last-child {
+            border-bottom: none;
+        }
+        .uml-item {
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .uml-field { color: #2c5282; } /* Blue for Fields */
+        .uml-method { color: #005f6b; } /* Teal for Methods */
+    </style>
+</head>
+<body class="p-6 md:p-10">
+
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-2">코드 구조 시각화 도구</h1>
+        <p class="text-gray-600 mb-6">Java 또는 C++ 코드를 입력하여 클래스/인터페이스의 UML-유사 다이어그램을 생성합니다.</p>
+
+        <!-- 입력 영역 -->
+        <div class="bg-white p-6 rounded-xl shadow-lg mb-8">
+            <label for="codeInput" class="block text-lg font-semibold text-gray-700 mb-3">객체지향 코드 입력 (Java/C++)</label>
+            <textarea id="codeInput" rows="15" class="w-full p-4 border border-gray-300 rounded-lg resize-none focus:ring-blue-500 focus:border-blue-500 text-sm font-mono" placeholder="여기에 C++ 또는 Java 클래스 코드를 붙여 넣으세요.">
+// Java 샘플 코드
+public interface Payable {
+    double getPaymentAmount();
+}
+
+public class Employee implements Payable {
+    private String name;
+    protected double baseSalary;
+    public static final String COMPANY = "TechCorp";
+
+    public Employee(String name, double baseSalary) {
+        this.name = name;
+        this.baseSalary = baseSalary;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public double getPaymentAmount() {
+        return baseSalary * 1.1; // 10% bonus
+    }
+}
+            </textarea>
+            <button onclick="generateDiagram()" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-150 ease-in-out shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                다이어그램 생성
+            </button>
+        </div>
+
+        <!-- 출력 영역 -->
+        <h2 class="text-3xl font-bold text-gray-800 mb-4">시각화 결과 (UML-유사 클래스 카드)</h2>
+        <div id="diagramOutput" class="flex flex-wrap gap-8 justify-center items-start p-6 bg-gray-100 rounded-xl min-h-64">
+            <p class="text-gray-500 text-center w-full mt-20" id="initialMessage">코드를 입력하고 '다이어그램 생성' 버튼을 눌러주세요.</p>
+        </div>
+
+    </div>
+
+    <script>
+        // 접근 제한자 매핑 (UML Notation)
+        const ACCESS_MAP = {
+            'public': '+',
+            'private': '-',
+            'protected': '#',
+            'static': 'S', // Static is often underlined, using 'S' for simplicity in this text-based display
+            'final': 'F' // Final/Constant is also represented, 'F' for simplicity
+        };
+
+        /**
+         * 코드에서 클래스 또는 인터페이스 구조를 파싱합니다.
+         * 단순화된 정규 표현식을 사용하여 기본적인 클래스명, 필드, 메소드만 추출합니다.
+         */
+        function parseCode(code) {
+            const definitions = [];
+            
+            // 1. 주석 제거 (단순화)
+            code = code.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, '');
+
+            // 2. 클래스 또는 인터페이스 블록 찾기 (class/interface NAME { ... })
+            // 이 정규식은 단순화를 위해 중괄호 깊이 계산 없이 전체 블록을 문자열로 찾습니다.
+            const classRegex = /(?:public|private|protected)?\s+(class|interface)\s+([a-zA-Z0-9_]+)(?:\s+extends\s+([a-zA-Z0-9_]+))?(?:\s+implements\s+([a-zA-Z0-9_, ]+))?\s*\{([\s\S]*?)\n\}/g;
+            let match;
+
+            while ((match = classRegex.exec(code)) !== null) {
+                const definitionType = match[1]; // class or interface
+                const name = match[2];
+                const blockContent = match[5]; // Content inside the main {} block
+
+                const definition = {
+                    name: name,
+                    type: definitionType.charAt(0).toUpperCase() + definitionType.slice(1), // Class or Interface
+                    fields: [],
+                    methods: []
+                };
+
+                // 3. 필드 (속성) 추출 (Java/C++ 유사 구문)
+                // 예: private String name; 또는 int age;
+                const fieldRegex = /(?:public|private|protected)?(?:\s+static)?(?:\s+final)?\s+([a-zA-Z0-9_<>\[\]]+)\s+([a-zA-Z0-9_]+)\s*(?:=|;)/g;
+                let fieldMatch;
+                
+                // 필드 파싱을 위한 간단한 로직: 접근 제한자, 타입, 이름
+                const lines = blockContent.split(';').map(line => line.trim()).filter(line => line.length > 0 && !line.includes('('));
+
+                for (const line of lines) {
+                    const parts = line.split(/\s+/).filter(p => p.length > 0);
+                    if (parts.length >= 2) {
+                        const access = parts.find(p => ['public', 'private', 'protected'].includes(p)) || '';
+                        const isStatic = parts.includes('static') ? 'S' : '';
+                        const isFinal = parts.includes('final') ? 'F' : '';
+                        
+                        // 타입과 이름 찾기 (가장 단순한 접근)
+                        let type = parts[parts.length - 2];
+                        let fieldName = parts[parts.length - 1].replace(/[^a-zA-Z0-9_]/g, ''); // 마지막 단어를 이름으로 가정
+
+                        // 생성자나 메소드 선언이 아닌지 확인 (괄호가 없는지 확인)
+                        if (!line.includes('(') && !line.includes(')')) {
+                            // UML 표기법: [접근] [이름]: [타입]
+                            const symbol = ACCESS_MAP[access] || ACCESS_MAP['public']; // 기본은 public (+)
+                            const notation = `${symbol} ${fieldName}: ${type}`;
+                            definition.fields.push(notation);
+                        }
+                    }
+                }
+
+
+                // 4. 메소드 (연산) 추출
+                // 예: public double getPaymentAmount() { ... }
+                const methodRegex = /(?:public|private|protected)?(?:\s+static)?(?:\s+final)?\s+([a-zA-Z0-9_<>\[\]]+)\s+([a-zA-Z0-9_]+)\s*\((.*?)\)\s*(?:throws\s+[a-zA-Z0-9_]+)?\s*\{/g;
+                let methodMatch;
+
+                while ((methodMatch = methodRegex.exec(blockContent)) !== null) {
+                    const fullSignature = methodMatch[0].trim().replace('{', '').trim();
+                    const parts = fullSignature.split(/\s+/).filter(p => p.length > 0);
+
+                    // 접근 제한자 추출
+                    const access = parts.find(p => ['public', 'private', 'protected'].includes(p)) || '';
+                    const symbol = ACCESS_MAP[access] || ACCESS_MAP['public'];
+
+                    // 반환 타입과 메소드 이름 추출 (생성자 제외를 위해 이름과 클래스명이 다른 경우만 추출)
+                    if (methodMatch[2] !== name) {
+                        // UML 표기법: [접근] [이름]([파라미터]): [반환 타입]
+                        const returnType = methodMatch[1];
+                        const methodName = methodMatch[2];
+                        const parameters = methodMatch[3].trim().split(',').filter(p => p.length > 0).join(', '); // 파라미터 목록을 간단히 정리
+
+                        const notation = `${symbol} ${methodName}(${parameters}): ${returnType}`;
+                        definition.methods.push(notation);
+                    } else if (methodMatch[2] === name && definitionType === 'class') {
+                        // 생성자 (Constructors) - 반환 타입 없이 이름만
+                        const parameters = methodMatch[3].trim().split(',').filter(p => p.length > 0).join(', ');
+                        const notation = `${symbol} ${name}(${parameters})`; // 생성자는 반환 타입 없음
+                        definition.methods.push(notation);
+                    }
+                }
+                
+                definitions.push(definition);
+            }
+
+            return definitions;
+        }
+
+        /**
+         * 파싱된 데이터를 기반으로 UML-유사 카드 HTML을 생성합니다.
+         */
+        function renderDiagram(definitions) {
+            const output = document.getElementById('diagramOutput');
+            const initialMessage = document.getElementById('initialMessage');
+            output.innerHTML = '';
+            
+            if (definitions.length === 0) {
+                output.innerHTML = '<p class="text-gray-500 text-center w-full mt-20">클래스 또는 인터페이스 정의를 찾을 수 없습니다. 코드를 확인해 주세요.</p>';
+                return;
+            }
+
+            if (initialMessage) { initialMessage.style.display = 'none'; }
+            
+            definitions.forEach(def => {
+                const isInterface = def.type === 'Interface';
+                const cardColor = isInterface ? 'bg-yellow-50 border-yellow-300' : 'bg-white border-blue-300';
+                const typeText = isInterface ? '<<Interface>>' : def.type;
+
+                // 카드 HTML 구조
+                const cardHtml = `
+                    <div class="uml-card border-2 rounded-lg ${cardColor} flex flex-col overflow-hidden">
+                        <!-- Name Section -->
+                        <div class="uml-card-name text-gray-900 bg-gray-100">
+                            <div class="text-xs text-gray-500 font-normal">${typeText}</div>
+                            ${def.name}
+                        </div>
+                        
+                        <!-- Fields Section -->
+                        <div class="uml-card-section text-gray-700">
+                            <h4 class="font-bold mb-1 text-xs uppercase text-gray-500">Attributes</h4>
+                            ${def.fields.map(field => `<div class="uml-item uml-field">${field}</div>`).join('') || '<div class="text-gray-400 italic">No fields defined</div>'}
+                        </div>
+
+                        <!-- Methods Section -->
+                        <div class="uml-card-section text-gray-700">
+                            <h4 class="font-bold mb-1 text-xs uppercase text-gray-500">Methods</h4>
+                            ${def.methods.map(method => `<div class="uml-item uml-method">${method}</div>`).join('') || '<div class="text-gray-400 italic">No methods defined</div>'}
+                        </div>
+                    </div>
+                `;
+                output.innerHTML += cardHtml;
+            });
+        }
+
+        /**
+         * 메인 실행 함수
+         */
+        function generateDiagram() {
+            const code = document.getElementById('codeInput').value;
+            try {
+                const definitions = parseCode(code);
+                renderDiagram(definitions);
+            } catch (error) {
+                console.error("다이어그램 생성 중 오류 발생:", error);
+                const output = document.getElementById('diagramOutput');
+                output.innerHTML = `<p class="text-red-500 text-center w-full mt-20">오류가 발생했습니다: ${error.message}. 입력된 코드가 유효한지 확인해 주세요.</p>`;
+            }
+        }
+        
+        // 초기 로드 시 샘플 코드로 한번 실행
+        window.onload = function() {
+            generateDiagram();
+        };
+
+    </script>
+</body>
+</html>
